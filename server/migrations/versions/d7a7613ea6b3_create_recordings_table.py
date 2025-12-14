@@ -1,8 +1,8 @@
-"""Create recordings table
+"""create recordings table
 
-Revision ID: dba0ee547f62
+Revision ID: d7a7613ea6b3
 Revises: 
-Create Date: 2025-12-14 16:35:28.100011
+Create Date: 2025-12-14 21:12:57.471464
 
 """
 from typing import Sequence, Union
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = 'dba0ee547f62'
+revision: str = 'd7a7613ea6b3'
 down_revision: Union[str, Sequence[str], None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -24,7 +24,8 @@ def upgrade() -> None:
     op.create_table('recordings',
     sa.Column('id', sa.String(), nullable=False),
     sa.Column('title', sa.String(), nullable=True),
-    sa.Column('s3_key', sa.String(), nullable=False),
+    sa.Column('raw_s3_key', sa.String(), nullable=True),
+    sa.Column('playback_s3_key', sa.String(), nullable=True),
     sa.Column('created_at', sa.String(), server_default=sa.text('now()'), nullable=False),
     sa.Column('updated_at', sa.String(), server_default=sa.text('now()'), nullable=False),
     sa.Column('user_id', sa.UUID(), nullable=False),

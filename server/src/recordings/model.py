@@ -12,7 +12,9 @@ class Recording(Base):
 
     id = Column(String, primary_key=True)
     title = Column(String, nullable=True)
-    s3_key = Column(String, nullable=False)
+    
+    raw_s3_key = Column(String)        # WAV
+    playback_s3_key = Column(String)   # M4A
 
     # Use server_default=func.now() so these are auto-filled by the database.
     created_at = Column(String, nullable=False, server_default=func.now())

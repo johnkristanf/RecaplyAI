@@ -77,6 +77,9 @@ export function RecordingCard({
     }
   };
 
+  console.log("audioRef.current.duration: ", audioRef?.current?.duration);
+  
+
   return (
     <div className="relative bg-white rounded-lg shadow p-6 flex flex-col gap-3 w-full max-w-xl mx-auto mb-6 border">
       <Tooltip>
@@ -98,7 +101,7 @@ export function RecordingCard({
         onEnded={handleEnded}
         onPlay={handlePlay}
         onPause={handlePause}
-        preload="metadata"
+        preload="auto"
         className="hidden"
       />
 
