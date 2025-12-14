@@ -10,11 +10,11 @@ import { formatAudioRecordedTime } from "~/utils";
 
 export function RecordingCard({
   title,
-  date,
+  created_at,
   src,
 }: {
   title: string;
-  date: string;
+  created_at: string;
   src: string;
 }) {
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -88,7 +88,7 @@ export function RecordingCard({
         </TooltipContent>
       </Tooltip>
       <h2 className="text-lg font-semibold">{title}</h2>
-      <span className="text-xs text-gray-500">{date}</span>
+      <span className="text-xs text-gray-500">{created_at}</span>
 
       <audio
         ref={audioRef}
@@ -200,7 +200,8 @@ export function RecordingCard({
         </button>
         {/* Time */}
         <span className="text-xs ml-3">
-          {formatAudioRecordedTime(currentTime)} / {formatAudioRecordedTime(duration)}
+          {formatAudioRecordedTime(currentTime)} /{" "}
+          {formatAudioRecordedTime(duration)}
         </span>
       </div>
       {/* Slider */}
