@@ -1,4 +1,3 @@
-import axios from "axios";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { CheckIcon, PauseIcon, PlayIcon, PlusIcon } from "lucide-react";
@@ -48,6 +47,8 @@ export function AddRecordDialog() {
   }, [recording, paused]);
 
   const startRecording = async () => {
+    chunksRef.current = [];
+
     streamRef.current = await navigator.mediaDevices.getUserMedia({
       audio: true,
     });
@@ -66,7 +67,7 @@ export function AddRecordDialog() {
 
     recorderRef.current.onstop = saveAudioRecord;
 
-    recorderRef.current.start();
+    recorderRef.current.start(100);
     setRecording(true);
     setPaused(false);
     setElapsedMs(0);
@@ -91,14 +92,19 @@ export function AddRecordDialog() {
   const saveAndStopRecording = () => {
     if (!recorderRef.current) return;
 
+    // Don't use setTimeout, just stop directly
     if (recorderRef.current.state === "paused") {
-      resumeRecording();
+      recorderRef.current.resume();
     }
 
-    if (recorderRef.current) recorderRef.current.stop();
+    // Stop after a microtask to ensure resume completes
+    Promise.resolve().then(() => {
+      recorderRef.current?.stop();
+    });
 
-    if (streamRef.current)
+    if (streamRef.current) {
       streamRef.current.getTracks().forEach((t) => t.stop());
+    }
     setRecording(false);
     setPaused(false);
   };
@@ -119,7 +125,6 @@ export function AddRecordDialog() {
       "chunks length:",
       chunksRef.current.length
     );
-    chunksRef.current = [];
 
     uploadMutation.mutate({ blob, title });
   };
@@ -144,9 +149,7 @@ export function AddRecordDialog() {
             </DialogDescription>
           </DialogHeader>
 
-          <form
-            className="flex flex-col gap-10"
-          >
+          <form className="flex flex-col gap-10">
             {/* Title field */}
             <div>
               <label
