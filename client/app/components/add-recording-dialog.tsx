@@ -14,6 +14,7 @@ import { formatRecordingTimeWithMs } from "~/utils";
 import { AnimatedFrequencyBar } from "./animated-frequency-bar";
 import { uploadRecording } from "~/api/post";
 import { toast } from "sonner";
+import AudioRecorderDebug from "./audio-debugger";
 
 export function AddRecordDialog() {
   const queryClient = useQueryClient();
@@ -50,11 +51,26 @@ export function AddRecordDialog() {
     chunksRef.current = [];
 
     streamRef.current = await navigator.mediaDevices.getUserMedia({
-      audio: true,
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      },
     });
 
+    const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+      ? "audio/webm;codecs=opus"
+      : MediaRecorder.isTypeSupported("audio/webm")
+        ? "audio/webm"
+        : MediaRecorder.isTypeSupported("audio/ogg;codecs=opus")
+          ? "audio/ogg;codecs=opus"
+          : "";
+
+    console.log("Using MIME type:", mimeType);
+
     recorderRef.current = new MediaRecorder(streamRef.current, {
-      mimeType: "audio/webm;codecs=opus",
+      mimeType: mimeType || undefined,
+      audioBitsPerSecond: 128000,
     });
 
     recorderRef.current.ondataavailable = (e) => {
@@ -67,44 +83,52 @@ export function AddRecordDialog() {
 
     recorderRef.current.onstop = saveAudioRecord;
 
-    recorderRef.current.start(100);
+    recorderRef.current.start();
     setRecording(true);
     setPaused(false);
     setElapsedMs(0);
     previousElapsedMsRef.current = 0;
   };
 
-  const pauseRecording = () => {
-    if (recorderRef.current && recorderRef.current.state === "recording") {
-      recorderRef.current.pause();
-      setPaused(true);
-      previousElapsedMsRef.current = elapsedMs;
-    }
-  };
+  // const pauseRecording = () => {
+  //   if (recorderRef.current && recorderRef.current.state === "recording") {
+  //     recorderRef.current.pause();
+  //     setPaused(true);
+  //     previousElapsedMsRef.current = elapsedMs;
+  //   }
+  // };
 
-  const resumeRecording = () => {
-    if (recorderRef.current && recorderRef.current.state === "paused") {
-      recorderRef.current.resume();
-      setPaused(false);
-    }
+  // const resumeRecording = () => {
+  //   if (recorderRef.current && recorderRef.current.state === "paused") {
+  //     recorderRef.current.resume();
+  //     setPaused(false);
+  //   }
+  // };
+
+  const downloadRecording = (blob: Blob, title: string) => {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${title}.webm`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   const saveAndStopRecording = () => {
-    if (!recorderRef.current) return;
+    // if (recorderRef.current.state === "paused") {
+    //   recorderRef.current.resume();
+    // }
 
-    // Don't use setTimeout, just stop directly
-    if (recorderRef.current.state === "paused") {
-      recorderRef.current.resume();
+    if (recorderRef.current && recorderRef.current.state === "recording") {
+      recorderRef.current.stop();
     }
-
-    // Stop after a microtask to ensure resume completes
-    Promise.resolve().then(() => {
-      recorderRef.current?.stop();
-    });
 
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((t) => t.stop());
     }
+
     setRecording(false);
     setPaused(false);
   };
@@ -125,7 +149,7 @@ export function AddRecordDialog() {
       "chunks length:",
       chunksRef.current.length
     );
-
+    downloadRecording(blob, title);
     uploadMutation.mutate({ blob, title });
   };
 
@@ -149,9 +173,11 @@ export function AddRecordDialog() {
             </DialogDescription>
           </DialogHeader>
 
+          <AudioRecorderDebug />
+
           <form className="flex flex-col gap-10">
             {/* Title field */}
-            <div>
+            {/* <div>
               <label
                 htmlFor="recording-title"
                 className="block text-sm font-medium text-gray-700"
@@ -168,10 +194,10 @@ export function AddRecordDialog() {
                 className="mt-1 block w-full rounded border border-gray-300 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-400 disabled:opacity-60 transition"
                 disabled={uploadMutation.isPending}
               />
-            </div>
+            </div> */}
 
             {/* Animated bar & time */}
-            <div className="flex flex-col items-center justify-center gap-2">
+            {/* <div className="flex flex-col items-center justify-center gap-2">
               <AnimatedFrequencyBar
                 height={80}
                 barCount={23}
@@ -183,10 +209,10 @@ export function AddRecordDialog() {
               <span className="text-xs font-mono mt-1 text-gray-600">
                 {formatRecordingTimeWithMs(elapsedMs)}
               </span>
-            </div>
+            </div> */}
 
             {/* Full width button group at the bottom */}
-            <div className="flex flex-col gap-2 mt-4 w-full">
+            {/* <div className="flex flex-col gap-2 mt-4 w-full">
               {!recording ? (
                 <button
                   onClick={startRecording}
@@ -241,7 +267,7 @@ export function AddRecordDialog() {
                   </div>
                 </>
               )}
-            </div>
+            </div> */}
           </form>
         </DialogContent>
       </Dialog>
