@@ -18,6 +18,7 @@ import AudioRecorderDebug from "./audio-debugger";
 
 export function AddRecordDialog() {
   const queryClient = useQueryClient();
+
   const recorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<BlobPart[]>([]);
@@ -31,33 +32,72 @@ export function AddRecordDialog() {
   const startTimeRef = useRef<number>(0);
   const previousElapsedMsRef = useRef<number>(0);
 
-  useEffect(() => {
-    let interval: number | null = null;
-    if (recording && !paused) {
-      startTimeRef.current = performance.now();
-      interval = window.setInterval(() => {
-        setElapsedMs(
-          previousElapsedMsRef.current +
-            (performance.now() - startTimeRef.current)
-        );
-      }, 35);
-    }
-    return () => {
-      if (interval) clearInterval(interval);
+  // AUDIO AND MIC ENUMERATION REF
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const rafRef = useRef<number | null>(null);
+
+  const [audioLevel, setAudioLevel] = useState(0);
+  const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
+  const [selectedMicId, setSelectedMicId] = useState<string | null>(null);
+
+
+  const startLevelTracking = async (stream: MediaStream) => {
+    const ctx = new AudioContext();
+    if (ctx.state === "suspended") await ctx.resume();
+  
+    const source = ctx.createMediaStreamSource(stream);
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 1024;
+  
+    source.connect(analyser);
+    // Connect to destination silently
+    const gain = ctx.createGain();
+    gain.gain.value = 0;
+    analyser.connect(gain);
+    gain.connect(ctx.destination);
+  
+    audioContextRef.current = ctx;
+    analyserRef.current = analyser;
+  
+    const data = new Uint8Array(analyser.fftSize);
+  
+    const tick = () => {
+      analyser.getByteTimeDomainData(data);
+  
+      let sum = 0;
+      for (let i = 0; i < data.length; i++) {
+        const v = (data[i] - 128) / 128;
+        sum += v * v;
+      }
+  
+      const rms = Math.sqrt(sum / data.length);
+      setAudioLevel(Math.min(1, rms * 3));
+  
+      rafRef.current = requestAnimationFrame(tick);
     };
-  }, [recording, paused]);
+  
+    tick();
+  };
+  
+
+
+  const stopLevelTracking = () => {
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    audioContextRef.current?.close();
+    setAudioLevel(0);
+  };
+  
+  
 
   const startRecording = async () => {
     chunksRef.current = [];
 
-    streamRef.current = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
-      },
-    });
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: { deviceId: selectedMicId || undefined } });
+    streamRef.current = stream;
 
+    await startLevelTracking(stream);
+    
     const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
       ? "audio/webm;codecs=opus"
       : MediaRecorder.isTypeSupported("audio/webm")
@@ -70,7 +110,6 @@ export function AddRecordDialog() {
 
     recorderRef.current = new MediaRecorder(streamRef.current, {
       mimeType: mimeType || undefined,
-      audioBitsPerSecond: 128000,
     });
 
     recorderRef.current.ondataavailable = (e) => {
@@ -83,7 +122,7 @@ export function AddRecordDialog() {
 
     recorderRef.current.onstop = saveAudioRecord;
 
-    recorderRef.current.start();
+    recorderRef.current.start(1000);
     setRecording(true);
     setPaused(false);
     setElapsedMs(0);
@@ -129,6 +168,7 @@ export function AddRecordDialog() {
       streamRef.current.getTracks().forEach((t) => t.stop());
     }
 
+    stopLevelTracking();
     setRecording(false);
     setPaused(false);
   };
@@ -150,8 +190,46 @@ export function AddRecordDialog() {
       chunksRef.current.length
     );
     downloadRecording(blob, title);
+
+    return
     uploadMutation.mutate({ blob, title });
   };
+
+
+
+  useEffect(() => {
+    const loadDevices = async () => {
+      // Permission is required before labels appear
+      await navigator.mediaDevices.getUserMedia({ audio: true });
+  
+      const all = await navigator.mediaDevices.enumerateDevices();
+      const mics = all.filter(d => d.kind === "audioinput");
+  
+      setDevices(mics);
+      if (!selectedMicId && mics.length > 0) {
+        setSelectedMicId(mics[0].deviceId);
+      }
+    };
+  
+    loadDevices();
+  }, []);
+  
+
+  useEffect(() => {
+    let interval: number | null = null;
+    if (recording && !paused) {
+      startTimeRef.current = performance.now();
+      interval = window.setInterval(() => {
+        setElapsedMs(
+          previousElapsedMsRef.current +
+            (performance.now() - startTimeRef.current)
+        );
+      }, 35);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [recording, paused]);
 
   return (
     <>
@@ -173,11 +251,11 @@ export function AddRecordDialog() {
             </DialogDescription>
           </DialogHeader>
 
-          <AudioRecorderDebug />
+          {/* <AudioRecorderDebug /> */}
 
-          <form className="flex flex-col gap-10">
+          <form className="flex flex-col gap-8">
             {/* Title field */}
-            {/* <div>
+            <div>
               <label
                 htmlFor="recording-title"
                 className="block text-sm font-medium text-gray-700"
@@ -194,25 +272,52 @@ export function AddRecordDialog() {
                 className="mt-1 block w-full rounded border border-gray-300 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-400 disabled:opacity-60 transition"
                 disabled={uploadMutation.isPending}
               />
-            </div> */}
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Microphone
+              </label>
+              <select
+                value={selectedMicId ?? ""}
+                onChange={e => setSelectedMicId(e.target.value)}
+                className="w-full border rounded px-2 py-2 text-sm"
+                disabled={recording}
+              >
+                {devices.map(d => (
+                  <option key={d.deviceId} value={d.deviceId}>
+                    {d.label || "Unknown microphone"}
+                  </option>
+                ))}
+              </select>
+            </div>
+
 
             {/* Animated bar & time */}
-            {/* <div className="flex flex-col items-center justify-center gap-2">
-              <AnimatedFrequencyBar
+            <div className="flex flex-col items-center justify-center gap-2">
+              {/* <AnimatedFrequencyBar
                 height={80}
                 barCount={23}
                 barWidth={6}
                 color="#60A5FA"
                 secondary="#BFDBFE"
                 animate={recording && !paused}
-              />
+              /> */}
+
+              <div className="w-full h-2 bg-gray-200 rounded overflow-hidden">
+                <div
+                  className="h-full bg-green-500 transition-all"
+                  style={{ width: `${audioLevel * 100}%` }}
+                />
+              </div>
+
               <span className="text-xs font-mono mt-1 text-gray-600">
                 {formatRecordingTimeWithMs(elapsedMs)}
               </span>
-            </div> */}
+            </div>
 
             {/* Full width button group at the bottom */}
-            {/* <div className="flex flex-col gap-2 mt-4 w-full">
+            <div className="flex flex-col gap-2  w-full">
               {!recording ? (
                 <button
                   onClick={startRecording}
@@ -229,7 +334,7 @@ export function AddRecordDialog() {
               ) : (
                 <>
                   <div className="flex flex-col gap-4">
-                    <button
+                    {/* <button
                       onClick={paused ? resumeRecording : pauseRecording}
                       className={`flex-1 px-4 py-2 rounded font-semibold transition ${
                         uploadMutation.isPending
@@ -250,7 +355,7 @@ export function AddRecordDialog() {
                           Pause
                         </span>
                       )}
-                    </button>
+                    </button> */}
                     <button
                       onClick={saveAndStopRecording}
                       className={`flex justify-center items-center gap-1 px-4 py-2 rounded font-semibold transition ${
@@ -267,7 +372,7 @@ export function AddRecordDialog() {
                   </div>
                 </>
               )}
-            </div> */}
+            </div>
           </form>
         </DialogContent>
       </Dialog>

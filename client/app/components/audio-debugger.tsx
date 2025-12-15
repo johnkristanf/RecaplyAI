@@ -163,10 +163,7 @@ export default function AudioRecorderDebug() {
 
       // Setup audio context with explicit settings
       const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-      audioContextRef.current = new AudioContextClass({
-        latencyHint: 'interactive',
-        sampleRate: 48000,
-      });
+      audioContextRef.current = new AudioContextClass();
       
       addDebugLog(`🔊 AudioContext state: ${audioContextRef.current.state}`);
       
@@ -179,14 +176,6 @@ export default function AudioRecorderDebug() {
       const source = audioContextRef.current.createMediaStreamSource(streamRef.current);
       analyserRef.current = audioContextRef.current.createAnalyser();
       
-      // More sensitive analyser settings
-      analyserRef.current.fftSize = 2048;
-      analyserRef.current.smoothingTimeConstant = 0.3;
-      analyserRef.current.minDecibels = -90;
-      analyserRef.current.maxDecibels = -10;
-      
-      source.connect(analyserRef.current);
-      addDebugLog(`🔊 Audio analyzer connected (fftSize: ${analyserRef.current.fftSize})`);
 
       // Test if we're getting any audio data at all
       setTimeout(() => {
@@ -219,10 +208,14 @@ export default function AudioRecorderDebug() {
         throw new Error('No supported audio format found');
       }
 
-      // Create MediaRecorder with minimal options
-      recorderRef.current = new MediaRecorder(streamRef.current, {
+      const destination = audioContextRef.current.createMediaStreamDestination();
+
+      source.connect(analyserRef.current);
+      source.connect(destination);
+      addDebugLog(`🔊 Audio analyzer connected (fftSize: ${analyserRef.current.fftSize})`);
+      
+      recorderRef.current = new MediaRecorder(destination.stream, {
         mimeType: selectedMimeType,
-        audioBitsPerSecond: 128000,
       });
 
       addDebugLog(`🎙️ MediaRecorder created (state: ${recorderRef.current.state})`);
