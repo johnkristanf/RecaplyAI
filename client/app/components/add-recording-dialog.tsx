@@ -22,6 +22,7 @@ export function AddRecordDialog() {
   const recorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<BlobPart[]>([]);
+  const mimeTypeRef = useRef<string>("");
 
   const [recording, setRecording] = useState<boolean>(false);
   const [paused, setPaused] = useState<boolean>(false);
@@ -41,72 +42,88 @@ export function AddRecordDialog() {
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
   const [selectedMicId, setSelectedMicId] = useState<string | null>(null);
 
-
   const startLevelTracking = async (stream: MediaStream) => {
     const ctx = new AudioContext();
-    if (ctx.state === "suspended") await ctx.resume();
-  
+
+    if (ctx.state === "suspended") {
+      await ctx.resume();
+    }
+
     const source = ctx.createMediaStreamSource(stream);
     const analyser = ctx.createAnalyser();
     analyser.fftSize = 1024;
-  
+
     source.connect(analyser);
-    // Connect to destination silently
-    const gain = ctx.createGain();
-    gain.gain.value = 0;
-    analyser.connect(gain);
-    gain.connect(ctx.destination);
-  
+
     audioContextRef.current = ctx;
     analyserRef.current = analyser;
-  
+
     const data = new Uint8Array(analyser.fftSize);
-  
+
     const tick = () => {
       analyser.getByteTimeDomainData(data);
-  
+
       let sum = 0;
       for (let i = 0; i < data.length; i++) {
         const v = (data[i] - 128) / 128;
         sum += v * v;
       }
-  
+
       const rms = Math.sqrt(sum / data.length);
-      setAudioLevel(Math.min(1, rms * 3));
-  
+      setAudioLevel(Math.min(1, rms * 5));
+
       rafRef.current = requestAnimationFrame(tick);
     };
-  
+
     tick();
   };
-  
-
 
   const stopLevelTracking = () => {
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
     audioContextRef.current?.close();
     setAudioLevel(0);
   };
-  
-  
 
   const startRecording = async () => {
     chunksRef.current = [];
 
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: { deviceId: selectedMicId || undefined } });
+    const constraints = {
+      audio: selectedMicId ? { deviceId: { exact: selectedMicId } } : true,
+    };
+
+    const stream = await navigator.mediaDevices.getUserMedia(constraints);
+    const track = stream.getAudioTracks()[0];
+
+    await track.applyConstraints({
+      echoCancellation: false,
+      noiseSuppression: false,
+      autoGainControl: false,
+    });
+
+    console.log("Audio track:", {
+      enabled: track.enabled,
+      muted: track.muted,
+      readyState: track.readyState,
+      settings: track.getSettings(),
+    });
+
     streamRef.current = stream;
 
     await startLevelTracking(stream);
-    
+
     const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
       ? "audio/webm;codecs=opus"
       : MediaRecorder.isTypeSupported("audio/webm")
         ? "audio/webm"
         : MediaRecorder.isTypeSupported("audio/ogg;codecs=opus")
           ? "audio/ogg;codecs=opus"
-          : "";
+          : MediaRecorder.isTypeSupported("audio/mp4")
+            ? "audio/mp4"
+            : "";
 
     console.log("Using MIME type:", mimeType);
+
+    mimeTypeRef.current = mimeType;
 
     recorderRef.current = new MediaRecorder(streamRef.current, {
       mimeType: mimeType || undefined,
@@ -120,9 +137,25 @@ export function AddRecordDialog() {
       }
     };
 
-    recorderRef.current.onstop = saveAudioRecord;
+    recorderRef.current.onstop = () => {
+      saveAudioRecord();
 
-    recorderRef.current.start(1000);
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((t) => t.stop());
+        streamRef.current = null;
+      }
+
+      stopLevelTracking();
+      setRecording(false);
+      setPaused(false);
+    };
+
+    recorderRef.current.onerror = (e) => {
+      console.error("MediaRecorder error:", e);
+      toast.error("Recording error occurred");
+    };
+
+    recorderRef.current.start();
     setRecording(true);
     setPaused(false);
     setElapsedMs(0);
@@ -147,30 +180,27 @@ export function AddRecordDialog() {
   const downloadRecording = (blob: Blob, title: string) => {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
+
     link.href = url;
-    link.download = `${title}.webm`;
+
+    // Also update the download extension accordingly
+    const ext = mimeTypeRef.current.includes("mp4")
+      ? "mp4"
+      : mimeTypeRef.current.includes("ogg")
+        ? "ogg"
+        : "webm";
+    link.download = `${title}.${ext}`;
+
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
   };
 
-  const saveAndStopRecording = () => {
-    // if (recorderRef.current.state === "paused") {
-    //   recorderRef.current.resume();
-    // }
-
+  const stopRecording = () => {
     if (recorderRef.current && recorderRef.current.state === "recording") {
       recorderRef.current.stop();
     }
-
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach((t) => t.stop());
-    }
-
-    stopLevelTracking();
-    setRecording(false);
-    setPaused(false);
   };
 
   const uploadMutation = useMutation({
@@ -182,7 +212,9 @@ export function AddRecordDialog() {
   });
 
   const saveAudioRecord = async () => {
-    const blob = new Blob(chunksRef.current, { type: "audio/webm" });
+    const blob = new Blob(chunksRef.current, {
+      type: mimeTypeRef.current || "audio/webm",
+    });
     console.log(
       "Blob size to upload:",
       blob.size,
@@ -191,29 +223,46 @@ export function AddRecordDialog() {
     );
     downloadRecording(blob, title);
 
-    return
+    return;
     uploadMutation.mutate({ blob, title });
   };
 
-
-
+  // LOAD DEVICE ENUMERATION
   useEffect(() => {
     const loadDevices = async () => {
-      // Permission is required before labels appear
-      await navigator.mediaDevices.getUserMedia({ audio: true });
-  
-      const all = await navigator.mediaDevices.enumerateDevices();
-      const mics = all.filter(d => d.kind === "audioinput");
-  
-      setDevices(mics);
-      if (!selectedMicId && mics.length > 0) {
-        setSelectedMicId(mics[0].deviceId);
+      try {
+        // Request permission and get device list
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: true,
+        });
+
+        const allDevices = await navigator.mediaDevices.enumerateDevices();
+        const audioInputs = allDevices.filter((d) => d.kind === "audioinput");
+
+        console.log("Audio devices found:", audioInputs);
+        setDevices(audioInputs);
+
+        if (audioInputs.length > 0 && !selectedMicId) {
+          setSelectedMicId(audioInputs[0].deviceId);
+        }
+
+        // Stop the permission stream after getting device list
+        stream.getTracks().forEach((track) => track.stop());
+      } catch (err) {
+        console.error("Error loading devices:", err);
+        toast.error("Could not access microphone");
       }
     };
-  
+
     loadDevices();
+
+    return () => {
+      // Cleanup permission stream on unmount
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((t) => t.stop());
+      }
+    };
   }, []);
-  
 
   useEffect(() => {
     let interval: number | null = null;
@@ -280,18 +329,17 @@ export function AddRecordDialog() {
               </label>
               <select
                 value={selectedMicId ?? ""}
-                onChange={e => setSelectedMicId(e.target.value)}
+                onChange={(e) => setSelectedMicId(e.target.value)}
                 className="w-full border rounded px-2 py-2 text-sm"
                 disabled={recording}
               >
-                {devices.map(d => (
+                {devices.map((d) => (
                   <option key={d.deviceId} value={d.deviceId}>
                     {d.label || "Unknown microphone"}
                   </option>
                 ))}
               </select>
             </div>
-
 
             {/* Animated bar & time */}
             <div className="flex flex-col items-center justify-center gap-2">
@@ -357,7 +405,7 @@ export function AddRecordDialog() {
                       )}
                     </button> */}
                     <button
-                      onClick={saveAndStopRecording}
+                      onClick={stopRecording}
                       className={`flex justify-center items-center gap-1 px-4 py-2 rounded font-semibold transition ${
                         uploadMutation.isPending
                           ? "bg-gray-300 text-gray-500 cursor-not-allowed"
