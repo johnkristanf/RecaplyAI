@@ -13,22 +13,14 @@ from src.recordings.dependencies import get_recording_service
 from src.database import Database
 from src.recordings.model import Recording
 from src.recordings.service import RecordingService
-
-# To make boto3 recognize your AWS CLI profiles (like `[default]` or others set via `aws configure` or `~/.aws/credentials`),
-# boto3 needs access to the proper credentials files and the correct AWS_PROFILE environment variable if you're *not* using the default.
-#
-# You can explicitly set a profile with:
-# boto3.session.Session(profile_name="your-profilename").client("s3")
-#
-# Example: use default profile, or override with AWS_PROFILE if provided
 import boto3
 
-PROFILE = "torremocha.johnkristan"  # Optional: set AWS_PROFILE in your environment
-if PROFILE:
-    session = boto3.session.Session(profile_name=PROFILE)
-else:
-    session = boto3.session.Session()
-s3 = session.client("s3")
+# PROFILE = "torremocha.johnkristan"  # Optional: set AWS_PROFILE in your environment
+# if PROFILE:
+#     session = boto3.session.Session(profile_name=PROFILE)
+# else:
+#     session = boto3.session.Session()
+s3 = boto3.client("s3")
 BUCKET = "recaplyai-dev-bucket"
 
 recordings_router = APIRouter()
@@ -39,14 +31,14 @@ async def upload_recording(
     file: UploadFile = File(...),
     title: str = Form(...),
     session: AsyncSession = Depends(Database.get_async_session),
-    service: RecordingService = Depends(get_recording_service)
+    service: RecordingService = Depends(get_recording_service),
 ):
     user_id = "2eb3d206-ad33-49d8-9cd7-0a6ce788a0a5"  # TODO: Replace with auth user
     recording_id = str(uuid.uuid4())
 
     wav_key = f"recordings/{user_id}/{recording_id}.wav"
     m4a_key = f"recordings/{user_id}/{recording_id}.m4a"
-    
+
     await service.summarize_with_ollama_qwen("TEST")
 
     # 1️⃣ Save WebM locally

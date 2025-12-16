@@ -43,39 +43,53 @@ export function AddRecordDialog() {
   const [selectedMicId, setSelectedMicId] = useState<string | null>(null);
 
   const startLevelTracking = async (stream: MediaStream) => {
-    const ctx = new AudioContext();
+    try {
+      const ctx = new AudioContext();
 
-    if (ctx.state === "suspended") {
-      await ctx.resume();
-    }
-
-    const source = ctx.createMediaStreamSource(stream);
-    const analyser = ctx.createAnalyser();
-    analyser.fftSize = 1024;
-
-    source.connect(analyser);
-
-    audioContextRef.current = ctx;
-    analyserRef.current = analyser;
-
-    const data = new Uint8Array(analyser.fftSize);
-
-    const tick = () => {
-      analyser.getByteTimeDomainData(data);
-
-      let sum = 0;
-      for (let i = 0; i < data.length; i++) {
-        const v = (data[i] - 128) / 128;
-        sum += v * v;
+      if (ctx.state === "suspended") {
+        await ctx.resume();
       }
 
-      const rms = Math.sqrt(sum / data.length);
-      setAudioLevel(Math.min(1, rms * 5));
+      const source = ctx.createMediaStreamSource(stream);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 2048; // Increased for better resolution
+      analyser.smoothingTimeConstant = 0.8;
 
-      rafRef.current = requestAnimationFrame(tick);
-    };
+      source.connect(analyser);
 
-    tick();
+      audioContextRef.current = ctx;
+      analyserRef.current = analyser;
+
+      // FIX: Use frequencyBinCount, not fftSize
+      const dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+      const tick = () => {
+        analyser.getByteTimeDomainData(dataArray);
+
+        let sum = 0;
+        for (let i = 0; i < dataArray.length; i++) {
+          const normalized = (dataArray[i] - 128) / 128;
+          sum += normalized * normalized;
+        }
+
+        const rms = Math.sqrt(sum / dataArray.length);
+
+        // Increased multiplier and added console log for debugging
+        const level = Math.min(1, rms * 10);
+
+        // DEBUG: Uncomment to see if values are changing
+        console.log("RMS:", rms.toFixed(4), "Level:", level.toFixed(4));
+
+        setAudioLevel(level);
+
+        rafRef.current = requestAnimationFrame(tick);
+      };
+
+      tick();
+    } catch (error) {
+      console.error("Error starting level tracking:", error);
+      toast.error("Could not start audio level monitoring");
+    }
   };
 
   const stopLevelTracking = () => {
@@ -87,18 +101,17 @@ export function AddRecordDialog() {
   const startRecording = async () => {
     chunksRef.current = [];
 
-    const constraints = {
-      audio: selectedMicId ? { deviceId: { exact: selectedMicId } } : true,
-    };
-
-    const stream = await navigator.mediaDevices.getUserMedia(constraints);
-    const track = stream.getAudioTracks()[0];
-
-    await track.applyConstraints({
-      echoCancellation: false,
-      noiseSuppression: false,
-      autoGainControl: false,
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        deviceId: selectedMicId ? { exact: selectedMicId } : undefined,
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false,
+        channelCount: 1,
+      },
     });
+
+    const track = stream.getAudioTracks()[0];
 
     console.log("Audio track:", {
       enabled: track.enabled,
@@ -106,6 +119,9 @@ export function AddRecordDialog() {
       readyState: track.readyState,
       settings: track.getSettings(),
     });
+
+    console.log("Stream active:", stream.active);
+    console.log("Audio tracks:", stream.getAudioTracks().length);
 
     streamRef.current = stream;
 
@@ -119,7 +135,7 @@ export function AddRecordDialog() {
           ? "audio/ogg;codecs=opus"
           : MediaRecorder.isTypeSupported("audio/mp4")
             ? "audio/mp4"
-            : "";
+            : "audio/webm"; // Default fallback instead of empty string
 
     console.log("Using MIME type:", mimeType);
 
@@ -155,7 +171,7 @@ export function AddRecordDialog() {
       toast.error("Recording error occurred");
     };
 
-    recorderRef.current.start();
+    recorderRef.current.start(1000);
     setRecording(true);
     setPaused(false);
     setElapsedMs(0);
