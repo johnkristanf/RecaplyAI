@@ -223,7 +223,6 @@ export function AddRecordDialog() {
     );
     downloadRecording(blob, title);
 
-    return;
     uploadMutation.mutate({ blob, title });
   };
 
