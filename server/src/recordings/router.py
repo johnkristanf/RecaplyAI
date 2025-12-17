@@ -15,12 +15,12 @@ from src.recordings.model import Recording
 from src.recordings.service import RecordingService
 import boto3
 
-# PROFILE = "torremocha.johnkristan"  # Optional: set AWS_PROFILE in your environment
-# if PROFILE:
-#     session = boto3.session.Session(profile_name=PROFILE)
-# else:
-#     session = boto3.session.Session()
-s3 = boto3.client("s3")
+PROFILE = "torremocha.johnkristan"  # Optional: set AWS_PROFILE in your environment
+if PROFILE:
+    session = boto3.session.Session(profile_name=PROFILE)
+else:
+    session = boto3.session.Session()
+s3 = session.client("s3")
 BUCKET = "recaplyai-dev-bucket"
 
 recordings_router = APIRouter()
@@ -28,7 +28,7 @@ recordings_router = APIRouter()
 
 @recordings_router.post("/upload")
 async def upload_recording(
-    file: UploadFile = File(...),
+    audio_file: UploadFile = File(...),
     title: str = Form(...),
     session: AsyncSession = Depends(Database.get_async_session),
     service: RecordingService = Depends(get_recording_service),

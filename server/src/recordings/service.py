@@ -50,7 +50,7 @@ Mao ra to for now. Kung naa mo questions, suggestions, o concerns, pwede na ta m
         try:
             response = await client.generate(
                 model=model,
-                prompt="Summarize the following text:\n\n<your text here>"
+                prompt=prompt
             )
             print(response["response"])
             return response

@@ -8,11 +8,11 @@ export const uploadRecording = async ({
   title: string;
 }) => {
   const formData = new FormData();
-  formData.append("file", blob);
+  formData.append("audio_file", blob);
   formData.append("title", title);
 
   const response = await axios.post(
-    "http://localhost:8000/api/v1/recordings/upload",
+    "http://10.0.0.50:8001/transcribe",
     formData,
     {
       headers: {
