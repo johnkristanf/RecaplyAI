@@ -1,5 +1,7 @@
 import os
 import subprocess
+import boto3
+from openai import OpenAI
 import tempfile
 import uuid
 import boto3
@@ -9,22 +11,22 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
+from src.config import settings
 from src.recordings.dependencies import get_recording_service
 from src.database import Database
 from src.recordings.model import Recording
 from src.recordings.service import RecordingService
-import boto3
 
-PROFILE = "torremocha.johnkristan"  # Optional: set AWS_PROFILE in your environment
-if PROFILE:
-    session = boto3.session.Session(profile_name=PROFILE)
-else:
-    session = boto3.session.Session()
-s3 = session.client("s3")
-BUCKET = "recaplyai-dev-bucket"
+# PROFILE = "torremocha.johnkristan"  # Optional: set AWS_PROFILE in your environment
+# if PROFILE:
+#     session = boto3.session.Session(profile_name=PROFILE)
+# else:
+#     session = boto3.session.Session()
+# s3 = boto3.client("s3")
+# BUCKET = "recaplyai-dev-bucket"
 
+openai_client = OpenAI(api_key=settings.OPENAI_KEY)
 recordings_router = APIRouter()
-
 
 @recordings_router.post("/upload")
 async def upload_recording(
@@ -33,13 +35,34 @@ async def upload_recording(
     session: AsyncSession = Depends(Database.get_async_session),
     service: RecordingService = Depends(get_recording_service),
 ):
+    
+    # Save the uploaded audio file to a temporary file
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".webm") as temp_in:
+        temp_in.write(await audio_file.read())
+        temp_in.flush()
+        temp_audio_path = temp_in.name
+
+    # # OpenAI Whisper API expects a file-like object (opened in binary mode)
+    # with open(temp_audio_path, "rb") as audio_file_for_openai:
+    #     transcript = openai_client.audio.translations.create(
+    #         model="whisper-1",
+    #         file=audio_file_for_openai
+    #     )
+        
+    url = "http://10.0.0.50:8001/transcribe"
+    transcript_response = await service.upload_audio_to_external_service(temp_audio_path, url)
+    # summarized_text_response = await service.ollama_model_summarize(transcribed_meeting_text=transcript.text, model="qwen2.5:14b")
+    # service.write_text_to_pdf(summarized_text_response)
+
+    print(f"transcript_response: {transcript_response}")
+
+
     user_id = "2eb3d206-ad33-49d8-9cd7-0a6ce788a0a5"  # TODO: Replace with auth user
     recording_id = str(uuid.uuid4())
 
-    wav_key = f"recordings/{user_id}/{recording_id}.wav"
-    m4a_key = f"recordings/{user_id}/{recording_id}.m4a"
-
-    await service.summarize_with_ollama_qwen("TEST")
+    # wav_key = f"recordings/{user_id}/{recording_id}.wav"
+    # m4a_key = f"recordings/{user_id}/{recording_id}.m4a"
+    
 
     # 1️⃣ Save WebM locally
     # with tempfile.NamedTemporaryFile(suffix=".webm", delete=False) as webm_file:
@@ -129,26 +152,26 @@ async def get_all_recordings(
 ):
     user_id = "2eb3d206-ad33-49d8-9cd7-0a6ce788a0a5"
 
-    stmt = select(Recording).where(Recording.user_id == user_id)
-    result = await session.execute(stmt)
-    db_recordings = result.scalars().all()
+#     stmt = select(Recording).where(Recording.user_id == user_id)
+#     result = await session.execute(stmt)
+#     db_recordings = result.scalars().all()
 
-    recordings_data = []
-    for rec in db_recordings:
-        src = s3.generate_presigned_url(
-            "get_object",
-            Params={"Bucket": BUCKET, "Key": rec.playback_s3_key},
-            ExpiresIn=3600,
-        )
-        recordings_data.append(
-            {
-                "id": rec.id,
-                "title": rec.title,
-                "s3_key": rec.raw_s3_key,
-                "src": src,
-                "created_at": rec.created_at,
-                "updated_at": rec.updated_at,
-            }
-        )
+#     recordings_data = []
+#     for rec in db_recordings:
+#         src = s3.generate_presigned_url(
+#             "get_object",
+#             Params={"Bucket": BUCKET, "Key": rec.playback_s3_key},
+#             ExpiresIn=3600,
+#         )
+#         recordings_data.append(
+#             {
+#                 "id": rec.id,
+#                 "title": rec.title,
+#                 "s3_key": rec.raw_s3_key,
+#                 "src": src,
+#                 "created_at": rec.created_at,
+#                 "updated_at": rec.updated_at,
+#             }
+#         )
 
-    return JSONResponse(content=recordings_data)
+    return JSONResponse(content=user_id)

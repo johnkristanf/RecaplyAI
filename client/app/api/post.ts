@@ -12,7 +12,7 @@ export const uploadRecording = async ({
   formData.append("title", title);
 
   const response = await axios.post(
-    "http://10.0.0.50:8001/transcribe",
+    "http://localhost:8000/api/v1/recordings/upload",
     formData,
     {
       headers: {

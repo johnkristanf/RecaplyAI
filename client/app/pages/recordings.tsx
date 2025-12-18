@@ -22,13 +22,13 @@ export default function RecordingsPage() {
     <div className="w-full pt-6 ">
       <h1 className="text-2xl font-bold mb-6">Recordings</h1>
       <div className="w-full grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-        {recordings && recordings.length > 0 && (
+        {/* {recordings && recordings.length > 0 && (
           <>
             {recordings.map((rec) => (
               <RecordingCard key={rec.id} {...rec} />
             ))}
           </>
-        )}
+        )} */}
         <AddRecordDialog />
       </div>
     </div>

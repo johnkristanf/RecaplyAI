@@ -237,8 +237,8 @@ export function AddRecordDialog() {
       "chunks length:",
       chunksRef.current.length
     );
-    downloadRecording(blob, title);
 
+    // downloadRecording(blob, title);
     uploadMutation.mutate({ blob, title });
   };
 
