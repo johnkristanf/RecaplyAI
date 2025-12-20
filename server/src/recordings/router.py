@@ -35,24 +35,16 @@ async def upload_recording(
     session: AsyncSession = Depends(Database.get_async_session),
     service: RecordingService = Depends(get_recording_service),
 ):
-    
     # Save the uploaded audio file to a temporary file
     with tempfile.NamedTemporaryFile(delete=False, suffix=".webm") as temp_in:
         temp_in.write(await audio_file.read())
         temp_in.flush()
         temp_audio_path = temp_in.name
 
-    # # OpenAI Whisper API expects a file-like object (opened in binary mode)
-    # with open(temp_audio_path, "rb") as audio_file_for_openai:
-    #     transcript = openai_client.audio.translations.create(
-    #         model="whisper-1",
-    #         file=audio_file_for_openai
-    #     )
-        
     url = "http://10.0.0.50:8001/transcribe"
     transcript_response = await service.upload_audio_to_external_service(temp_audio_path, url)
-    # summarized_text_response = await service.ollama_model_summarize(transcribed_meeting_text=transcript.text, model="qwen2.5:14b")
-    # service.write_text_to_pdf(summarized_text_response)
+    summarized_text_response = await service.ollama_model_summarize(transcribed_meeting_text=transcript_response, model="qwen2.5:14b")
+    service.write_text_to_pdf(summarized_text_response)
 
     print(f"transcript_response: {transcript_response}")
 
@@ -146,6 +138,12 @@ async def upload_recording(
     )
 
 
+@recordings_router.get("/test/whisper")
+async def test_whisper(
+    service: RecordingService = Depends(get_recording_service),
+):
+    service.whisper_audio_transcribe()
+    
 @recordings_router.get("/get/all")
 async def get_all_recordings(
     session: AsyncSession = Depends(Database.get_async_session),
