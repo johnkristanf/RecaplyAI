@@ -4,6 +4,7 @@ from reportlab.lib.pagesizes import LETTER
 from reportlab.pdfgen import canvas
 from faster_whisper import WhisperModel
 from transformers import pipeline
+import torch
 
 
 class RecordingService:
@@ -40,12 +41,14 @@ class RecordingService:
             return {"error": str(e)}
 
     def whisper_audio_transcribe(self):
+        device = "cuda" if torch.cuda.is_available() else "cpu"
         model_path = "pengyizhou/whisper-fleurs-ceb_ph-small-tagalog-lid"
+        
         pipe = pipeline(
             task="automatic-speech-recognition",
             model=model_path,
             chunk_length_s=30,
-            device='cpu'
+            device=device
         )
         
         recording_path = "src/recordings/123.mp3"
